@@ -3,16 +3,16 @@ define([
   '../utils',
   '../keys'
 ], function ($, Utils, KEYS) {
-  function Search (decorated, $element, options) {
+  function Search(decorated, $element, options) {
     decorated.call(this, $element, options);
   }
 
   Search.prototype.render = function (decorated) {
     var $search = $(
       '<li class="select2-search select2-search--inline">' +
-        '<input class="select2-search__field" type="search" tabindex="-1"' +
-        ' autocomplete="off" autocorrect="off" autocapitalize="off"' +
-        ' spellcheck="false" role="textbox" aria-autocomplete="list" />' +
+      '<input class="select2-search__field" type="search" tabindex="-1"' +
+      ' autocomplete="off" autocorrect="off" autocapitalize="off"' +
+      ' spellcheck="false" role="textbox" aria-autocomplete="list" />' +
       '</li>'
     );
 
@@ -171,7 +171,7 @@ define([
     decorated.call(this, data);
 
     this.$selection.find('.select2-selection__rendered')
-                   .append(this.$searchContainer);
+      .append(this.$searchContainer);
 
     this.resizeSearch();
     if (searchHadFocus) {
@@ -203,19 +203,10 @@ define([
   };
 
   Search.prototype.resizeSearch = function () {
-    this.$search.css('width', '25px');
-
-    var width = '';
-
-    if (this.$search.attr('placeholder') !== '') {
-      width = this.$selection.find('.select2-selection__rendered').innerWidth();
-    } else {
-      var minimumWidth = this.$search.val().length + 1;
-
-      width = (minimumWidth * 0.75) + 'em';
-    }
-
-    this.$search.css('width', width);
+    this.$search.css({
+      'width': '100%',
+      "cursor": "pointer"
+    });
   };
 
   return Search;

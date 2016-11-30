@@ -30,13 +30,11 @@
 var S2;(function () { if (!S2 || !S2.requirejs) {
 if (!S2) { S2 = {}; } else { require = S2; }
 /**
- * @license almond 0.3.1 Copyright (c) 2011-2014, The Dojo Foundation All Rights Reserved.
- * Available via the MIT or new BSD license.
- * see: http://github.com/jrburke/almond for details
+ * @license almond 0.3.3 Copyright jQuery Foundation and other contributors.
+ * Released under MIT license, http://github.com/requirejs/almond/LICENSE
  */
 //Going sloppy to avoid 'use strict' string cost, but strict practices should
 //be followed.
-/*jslint sloppy: true */
 /*global setTimeout: false */
 
 var requirejs, require, define;
@@ -64,60 +62,58 @@ var requirejs, require, define;
      */
     function normalize(name, baseName) {
         var nameParts, nameSegment, mapValue, foundMap, lastIndex,
-            foundI, foundStarMap, starI, i, j, part,
+            foundI, foundStarMap, starI, i, j, part, normalizedBaseParts,
             baseParts = baseName && baseName.split("/"),
             map = config.map,
             starMap = (map && map['*']) || {};
 
         //Adjust any relative paths.
-        if (name && name.charAt(0) === ".") {
-            //If have a base name, try to normalize against it,
-            //otherwise, assume it is a top-level require that will
-            //be relative to baseUrl in the end.
-            if (baseName) {
-                name = name.split('/');
-                lastIndex = name.length - 1;
+        if (name) {
+            name = name.split('/');
+            lastIndex = name.length - 1;
 
-                // Node .js allowance:
-                if (config.nodeIdCompat && jsSuffixRegExp.test(name[lastIndex])) {
-                    name[lastIndex] = name[lastIndex].replace(jsSuffixRegExp, '');
-                }
+            // If wanting node ID compatibility, strip .js from end
+            // of IDs. Have to do this here, and not in nameToUrl
+            // because node allows either .js or non .js to map
+            // to same file.
+            if (config.nodeIdCompat && jsSuffixRegExp.test(name[lastIndex])) {
+                name[lastIndex] = name[lastIndex].replace(jsSuffixRegExp, '');
+            }
 
-                //Lop off the last part of baseParts, so that . matches the
-                //"directory" and not name of the baseName's module. For instance,
-                //baseName of "one/two/three", maps to "one/two/three.js", but we
-                //want the directory, "one/two" for this normalization.
-                name = baseParts.slice(0, baseParts.length - 1).concat(name);
+            // Starts with a '.' so need the baseName
+            if (name[0].charAt(0) === '.' && baseParts) {
+                //Convert baseName to array, and lop off the last part,
+                //so that . matches that 'directory' and not name of the baseName's
+                //module. For instance, baseName of 'one/two/three', maps to
+                //'one/two/three.js', but we want the directory, 'one/two' for
+                //this normalization.
+                normalizedBaseParts = baseParts.slice(0, baseParts.length - 1);
+                name = normalizedBaseParts.concat(name);
+            }
 
-                //start trimDots
-                for (i = 0; i < name.length; i += 1) {
-                    part = name[i];
-                    if (part === ".") {
-                        name.splice(i, 1);
-                        i -= 1;
-                    } else if (part === "..") {
-                        if (i === 1 && (name[2] === '..' || name[0] === '..')) {
-                            //End of the line. Keep at least one non-dot
-                            //path segment at the front so it can be mapped
-                            //correctly to disk. Otherwise, there is likely
-                            //no path mapping for a path starting with '..'.
-                            //This can still fail, but catches the most reasonable
-                            //uses of ..
-                            break;
-                        } else if (i > 0) {
-                            name.splice(i - 1, 2);
-                            i -= 2;
-                        }
+            //start trimDots
+            for (i = 0; i < name.length; i++) {
+                part = name[i];
+                if (part === '.') {
+                    name.splice(i, 1);
+                    i -= 1;
+                } else if (part === '..') {
+                    // If at the start, or previous value is still ..,
+                    // keep them so that when converted to a path it may
+                    // still work when converted to a path, even though
+                    // as an ID it is less than ideal. In larger point
+                    // releases, may be better to just kick out an error.
+                    if (i === 0 || (i === 1 && name[2] === '..') || name[i - 1] === '..') {
+                        continue;
+                    } else if (i > 0) {
+                        name.splice(i - 1, 2);
+                        i -= 2;
                     }
                 }
-                //end trimDots
-
-                name = name.join("/");
-            } else if (name.indexOf('./') === 0) {
-                // No baseName, so this is ID is resolved relative
-                // to baseUrl, pull off the leading dot.
-                name = name.substring(2);
             }
+            //end trimDots
+
+            name = name.join('/');
         }
 
         //Apply map config if available.
@@ -230,32 +226,39 @@ var requirejs, require, define;
         return [prefix, name];
     }
 
+    //Creates a parts array for a relName where first part is plugin ID,
+    //second part is resource ID. Assumes relName has already been normalized.
+    function makeRelParts(relName) {
+        return relName ? splitPrefix(relName) : [];
+    }
+
     /**
      * Makes a name map, normalizing the name, and using a plugin
      * for normalization if necessary. Grabs a ref to plugin
      * too, as an optimization.
      */
-    makeMap = function (name, relName) {
+    makeMap = function (name, relParts) {
         var plugin,
             parts = splitPrefix(name),
-            prefix = parts[0];
+            prefix = parts[0],
+            relResourceName = relParts[1];
 
         name = parts[1];
 
         if (prefix) {
-            prefix = normalize(prefix, relName);
+            prefix = normalize(prefix, relResourceName);
             plugin = callDep(prefix);
         }
 
         //Normalize according
         if (prefix) {
             if (plugin && plugin.normalize) {
-                name = plugin.normalize(name, makeNormalize(relName));
+                name = plugin.normalize(name, makeNormalize(relResourceName));
             } else {
-                name = normalize(name, relName);
+                name = normalize(name, relResourceName);
             }
         } else {
-            name = normalize(name, relName);
+            name = normalize(name, relResourceName);
             parts = splitPrefix(name);
             prefix = parts[0];
             name = parts[1];
@@ -302,13 +305,14 @@ var requirejs, require, define;
     };
 
     main = function (name, deps, callback, relName) {
-        var cjsModule, depName, ret, map, i,
+        var cjsModule, depName, ret, map, i, relParts,
             args = [],
             callbackType = typeof callback,
             usingExports;
 
         //Use name if no relName
         relName = relName || name;
+        relParts = makeRelParts(relName);
 
         //Call the callback to define the module, if necessary.
         if (callbackType === 'undefined' || callbackType === 'function') {
@@ -317,7 +321,7 @@ var requirejs, require, define;
             //Default to [require, exports, module] if no deps
             deps = !deps.length && callback.length ? ['require', 'exports', 'module'] : deps;
             for (i = 0; i < deps.length; i += 1) {
-                map = makeMap(deps[i], relName);
+                map = makeMap(deps[i], relParts);
                 depName = map.f;
 
                 //Fast path CommonJS standard dependencies.
@@ -373,7 +377,7 @@ var requirejs, require, define;
             //deps arg is the module name, and second arg (if passed)
             //is just the relName.
             //Normalize module name, if it contains . or ..
-            return callDep(makeMap(deps, callback).f);
+            return callDep(makeMap(deps, makeRelParts(callback)).f);
         } else if (!deps.splice) {
             //deps is a config object, not an array.
             config = deps;
@@ -1813,7 +1817,7 @@ S2.define('select2/selection/allowClear',[
 
     var $remove = $(
       '<span class="select2-selection__clear">' +
-        '&times;' +
+        '&#x2716;' +
       '</span>'
     );
     $remove.data('data', data);
@@ -1824,21 +1828,99 @@ S2.define('select2/selection/allowClear',[
   return AllowClear;
 });
 
+S2.define('select2/selection/selectAll',[
+  'jquery',
+  '../keys'
+], function ($, KEYS) {
+  function SelectAll () { }
+
+  SelectAll.prototype.bind = function (decorated, container, $container) {
+    var self = this;
+
+    decorated.call(this, container, $container);   
+
+    this.$selection.on('mousedown', '.select2-selection__all',
+      function (evt) {
+        self._handleSelectAll(evt);
+    });
+ 
+  };
+
+  SelectAll.prototype._handleSelectAll  = function (_, evt) {
+    // Ignore the event if it is disabled
+    if (this.options.get('disabled')) {
+      return;
+    }
+
+console.log(this);
+    var $selectionAll = this.$selection.find('.select2-selection__all');
+
+    // Ignore the event if nothing has been selected
+    if ($selectionAll.length === 0) {
+      return;
+    }
+
+    evt.stopPropagation();
+
+    var data = $selectionAll.data('data');
+
+    for (var d = 0; d < data.length; d++) {
+      var unselectData = {
+        data: data[d]
+      };
+
+      // Trigger the `unselect` event, so people can prevent it from being
+      // selectionAlled.
+      this.trigger('unselect', unselectData);
+
+      // If the event was prevented, don't selectionAll it out.
+      if (unselectData.prevented) {
+        return;
+      }
+    }
+
+    this.$element.val(this.placeholder.id).trigger('change');
+
+    this.trigger('toggle', {});
+  };
+
+ 
+
+  SelectAll.prototype.update = function (decorated, data) {
+    decorated.call(this, data);
+
+    if (this.$selection.find('.select2-selection__all').length > 0) {
+      return;
+    }
+
+    var $selectall = $(
+      '<span class="select2-selection__all">' +
+        '&#x2714;' +
+      '</span>'
+    );
+  //  $selectall.data('data', data);
+
+    this.$selection.find('.select2-selection__rendered').prepend($selectall);
+  };
+
+  return SelectAll;
+});
+
 S2.define('select2/selection/search',[
   'jquery',
   '../utils',
   '../keys'
 ], function ($, Utils, KEYS) {
-  function Search (decorated, $element, options) {
+  function Search(decorated, $element, options) {
     decorated.call(this, $element, options);
   }
 
   Search.prototype.render = function (decorated) {
     var $search = $(
       '<li class="select2-search select2-search--inline">' +
-        '<input class="select2-search__field" type="search" tabindex="-1"' +
-        ' autocomplete="off" autocorrect="off" autocapitalize="off"' +
-        ' spellcheck="false" role="textbox" aria-autocomplete="list" />' +
+      '<input class="select2-search__field" type="search" tabindex="-1"' +
+      ' autocomplete="off" autocorrect="off" autocapitalize="off"' +
+      ' spellcheck="false" role="textbox" aria-autocomplete="list" />' +
       '</li>'
     );
 
@@ -1997,7 +2079,7 @@ S2.define('select2/selection/search',[
     decorated.call(this, data);
 
     this.$selection.find('.select2-selection__rendered')
-                   .append(this.$searchContainer);
+      .append(this.$searchContainer);
 
     this.resizeSearch();
     if (searchHadFocus) {
@@ -2029,19 +2111,10 @@ S2.define('select2/selection/search',[
   };
 
   Search.prototype.resizeSearch = function () {
-    this.$search.css('width', '25px');
-
-    var width = '';
-
-    if (this.$search.attr('placeholder') !== '') {
-      width = this.$selection.find('.select2-selection__rendered').innerWidth();
-    } else {
-      var minimumWidth = this.$search.val().length + 1;
-
-      width = (minimumWidth * 0.75) + 'em';
-    }
-
-    this.$search.css('width', width);
+    this.$search.css({
+      'width': '100%',
+      "cursor": "pointer"
+    });
   };
 
   return Search;
@@ -4516,6 +4589,7 @@ S2.define('select2/defaults',[
   './selection/multiple',
   './selection/placeholder',
   './selection/allowClear',
+  './selection/selectAll',
   './selection/search',
   './selection/eventRelay',
 
@@ -4544,364 +4618,371 @@ S2.define('select2/defaults',[
   './i18n/en'
 ], function ($, require,
 
-             ResultsList,
+  ResultsList,
 
-             SingleSelection, MultipleSelection, Placeholder, AllowClear,
-             SelectionSearch, EventRelay,
+  SingleSelection, MultipleSelection, Placeholder, AllowClear, SelectAll,
+  SelectionSearch, EventRelay,
 
-             Utils, Translation, DIACRITICS,
+  Utils, Translation, DIACRITICS,
 
-             SelectData, ArrayData, AjaxData, Tags, Tokenizer,
-             MinimumInputLength, MaximumInputLength, MaximumSelectionLength,
+  SelectData, ArrayData, AjaxData, Tags, Tokenizer,
+  MinimumInputLength, MaximumInputLength, MaximumSelectionLength,
 
-             Dropdown, DropdownSearch, HidePlaceholder, InfiniteScroll,
-             AttachBody, MinimumResultsForSearch, SelectOnClose, CloseOnSelect,
+  Dropdown, DropdownSearch, HidePlaceholder, InfiniteScroll,
+  AttachBody, MinimumResultsForSearch, SelectOnClose, CloseOnSelect,
 
-             EnglishTranslation) {
-  function Defaults () {
-    this.reset();
-  }
-
-  Defaults.prototype.apply = function (options) {
-    options = $.extend(true, {}, this.defaults, options);
-
-    if (options.dataAdapter == null) {
-      if (options.ajax != null) {
-        options.dataAdapter = AjaxData;
-      } else if (options.data != null) {
-        options.dataAdapter = ArrayData;
-      } else {
-        options.dataAdapter = SelectData;
-      }
-
-      if (options.minimumInputLength > 0) {
-        options.dataAdapter = Utils.Decorate(
-          options.dataAdapter,
-          MinimumInputLength
-        );
-      }
-
-      if (options.maximumInputLength > 0) {
-        options.dataAdapter = Utils.Decorate(
-          options.dataAdapter,
-          MaximumInputLength
-        );
-      }
-
-      if (options.maximumSelectionLength > 0) {
-        options.dataAdapter = Utils.Decorate(
-          options.dataAdapter,
-          MaximumSelectionLength
-        );
-      }
-
-      if (options.tags) {
-        options.dataAdapter = Utils.Decorate(options.dataAdapter, Tags);
-      }
-
-      if (options.tokenSeparators != null || options.tokenizer != null) {
-        options.dataAdapter = Utils.Decorate(
-          options.dataAdapter,
-          Tokenizer
-        );
-      }
-
-      if (options.query != null) {
-        var Query = require(options.amdBase + 'compat/query');
-
-        options.dataAdapter = Utils.Decorate(
-          options.dataAdapter,
-          Query
-        );
-      }
-
-      if (options.initSelection != null) {
-        var InitSelection = require(options.amdBase + 'compat/initSelection');
-
-        options.dataAdapter = Utils.Decorate(
-          options.dataAdapter,
-          InitSelection
-        );
-      }
+  EnglishTranslation) {
+    function Defaults() {
+      this.reset();
     }
 
-    if (options.resultsAdapter == null) {
-      options.resultsAdapter = ResultsList;
+    Defaults.prototype.apply = function (options) {
+      options = $.extend(true, {}, this.defaults, options);
 
-      if (options.ajax != null) {
-        options.resultsAdapter = Utils.Decorate(
-          options.resultsAdapter,
-          InfiniteScroll
-        );
+      if (options.dataAdapter == null) {
+        if (options.ajax != null) {
+          options.dataAdapter = AjaxData;
+        } else if (options.data != null) {
+          options.dataAdapter = ArrayData;
+        } else {
+          options.dataAdapter = SelectData;
+        }
+
+        if (options.minimumInputLength > 0) {
+          options.dataAdapter = Utils.Decorate(
+            options.dataAdapter,
+            MinimumInputLength
+          );
+        }
+
+        if (options.maximumInputLength > 0) {
+          options.dataAdapter = Utils.Decorate(
+            options.dataAdapter,
+            MaximumInputLength
+          );
+        }
+
+        if (options.maximumSelectionLength > 0) {
+          options.dataAdapter = Utils.Decorate(
+            options.dataAdapter,
+            MaximumSelectionLength
+          );
+        }
+
+        if (options.tags) {
+          options.dataAdapter = Utils.Decorate(options.dataAdapter, Tags);
+        }
+
+        if (options.tokenSeparators != null || options.tokenizer != null) {
+          options.dataAdapter = Utils.Decorate(
+            options.dataAdapter,
+            Tokenizer
+          );
+        }
+
+        if (options.query != null) {
+          var Query = require(options.amdBase + 'compat/query');
+
+          options.dataAdapter = Utils.Decorate(
+            options.dataAdapter,
+            Query
+          );
+        }
+
+        if (options.initSelection != null) {
+          var InitSelection = require(options.amdBase + 'compat/initSelection');
+
+          options.dataAdapter = Utils.Decorate(
+            options.dataAdapter,
+            InitSelection
+          );
+        }
       }
 
-      if (options.placeholder != null) {
-        options.resultsAdapter = Utils.Decorate(
-          options.resultsAdapter,
-          HidePlaceholder
-        );
+      if (options.resultsAdapter == null) {
+        options.resultsAdapter = ResultsList;
+
+        if (options.ajax != null) {
+          options.resultsAdapter = Utils.Decorate(
+            options.resultsAdapter,
+            InfiniteScroll
+          );
+        }
+
+        if (options.placeholder != null) {
+          options.resultsAdapter = Utils.Decorate(
+            options.resultsAdapter,
+            HidePlaceholder
+          );
+        }
+
+        if (options.selectOnClose) {
+          options.resultsAdapter = Utils.Decorate(
+            options.resultsAdapter,
+            SelectOnClose
+          );
+        }
       }
 
-      if (options.selectOnClose) {
-        options.resultsAdapter = Utils.Decorate(
-          options.resultsAdapter,
-          SelectOnClose
-        );
-      }
-    }
+      if (options.dropdownAdapter == null) {
+        if (options.multiple) {
+          options.dropdownAdapter = Dropdown;
+        } else {
+          var SearchableDropdown = Utils.Decorate(Dropdown, DropdownSearch);
 
-    if (options.dropdownAdapter == null) {
-      if (options.multiple) {
-        options.dropdownAdapter = Dropdown;
-      } else {
-        var SearchableDropdown = Utils.Decorate(Dropdown, DropdownSearch);
+          options.dropdownAdapter = SearchableDropdown;
+        }
 
-        options.dropdownAdapter = SearchableDropdown;
-      }
+        if (options.minimumResultsForSearch !== 0) {
+          options.dropdownAdapter = Utils.Decorate(
+            options.dropdownAdapter,
+            MinimumResultsForSearch
+          );
+        }
 
-      if (options.minimumResultsForSearch !== 0) {
+        if (options.closeOnSelect) {
+          options.dropdownAdapter = Utils.Decorate(
+            options.dropdownAdapter,
+            CloseOnSelect
+          );
+        }
+
+        if (
+          options.dropdownCssClass != null ||
+          options.dropdownCss != null ||
+          options.adaptDropdownCssClass != null
+        ) {
+          var DropdownCSS = require(options.amdBase + 'compat/dropdownCss');
+
+          options.dropdownAdapter = Utils.Decorate(
+            options.dropdownAdapter,
+            DropdownCSS
+          );
+        }
+
         options.dropdownAdapter = Utils.Decorate(
           options.dropdownAdapter,
-          MinimumResultsForSearch
+          AttachBody
         );
       }
 
-      if (options.closeOnSelect) {
-        options.dropdownAdapter = Utils.Decorate(
-          options.dropdownAdapter,
-          CloseOnSelect
-        );
-      }
+      if (options.selectionAdapter == null) {
+        if (options.multiple) {
+          options.selectionAdapter = MultipleSelection;
+        } else {
+          options.selectionAdapter = SingleSelection;
+        }
 
-      if (
-        options.dropdownCssClass != null ||
-        options.dropdownCss != null ||
-        options.adaptDropdownCssClass != null
-      ) {
-        var DropdownCSS = require(options.amdBase + 'compat/dropdownCss');
+        // Add the placeholder mixin if a placeholder was specified
+        if (options.placeholder != null) {
+          options.selectionAdapter = Utils.Decorate(
+            options.selectionAdapter,
+            Placeholder
+          );
+        }
 
-        options.dropdownAdapter = Utils.Decorate(
-          options.dropdownAdapter,
-          DropdownCSS
-        );
-      }
+        if (options.allowClear) {
+          options.selectionAdapter = Utils.Decorate(
+            options.selectionAdapter,
+            AllowClear
+          );
+        }
 
-      options.dropdownAdapter = Utils.Decorate(
-        options.dropdownAdapter,
-        AttachBody
-      );
-    }
+        if (options.multiple) {
+          options.selectionAdapter = Utils.Decorate(
+            options.selectionAdapter,
+            SelectionSearch
+          );
+        }
 
-    if (options.selectionAdapter == null) {
-      if (options.multiple) {
-        options.selectionAdapter = MultipleSelection;
-      } else {
-        options.selectionAdapter = SingleSelection;
-      }
+        if (options.selectAll && options.multiple) {
+          options.selectionAdapter = Utils.Decorate(
+            options.selectionAdapter,
+            SelectAll
+          );
+        }
 
-      // Add the placeholder mixin if a placeholder was specified
-      if (options.placeholder != null) {
-        options.selectionAdapter = Utils.Decorate(
-          options.selectionAdapter,
-          Placeholder
-        );
-      }
+        if (
+          options.containerCssClass != null ||
+          options.containerCss != null ||
+          options.adaptContainerCssClass != null
+        ) {
+          var ContainerCSS = require(options.amdBase + 'compat/containerCss');
 
-      if (options.allowClear) {
-        options.selectionAdapter = Utils.Decorate(
-          options.selectionAdapter,
-          AllowClear
-        );
-      }
-
-      if (options.multiple) {
-        options.selectionAdapter = Utils.Decorate(
-          options.selectionAdapter,
-          SelectionSearch
-        );
-      }
-
-      if (
-        options.containerCssClass != null ||
-        options.containerCss != null ||
-        options.adaptContainerCssClass != null
-      ) {
-        var ContainerCSS = require(options.amdBase + 'compat/containerCss');
+          options.selectionAdapter = Utils.Decorate(
+            options.selectionAdapter,
+            ContainerCSS
+          );
+        }
 
         options.selectionAdapter = Utils.Decorate(
           options.selectionAdapter,
-          ContainerCSS
+          EventRelay
         );
       }
 
-      options.selectionAdapter = Utils.Decorate(
-        options.selectionAdapter,
-        EventRelay
-      );
-    }
+      if (typeof options.language === 'string') {
+        // Check if the language is specified with a region
+        if (options.language.indexOf('-') > 0) {
+          // Extract the region information if it is included
+          var languageParts = options.language.split('-');
+          var baseLanguage = languageParts[0];
 
-    if (typeof options.language === 'string') {
-      // Check if the language is specified with a region
-      if (options.language.indexOf('-') > 0) {
-        // Extract the region information if it is included
-        var languageParts = options.language.split('-');
-        var baseLanguage = languageParts[0];
-
-        options.language = [options.language, baseLanguage];
-      } else {
-        options.language = [options.language];
+          options.language = [options.language, baseLanguage];
+        } else {
+          options.language = [options.language];
+        }
       }
-    }
 
-    if ($.isArray(options.language)) {
-      var languages = new Translation();
-      options.language.push('en');
+      if ($.isArray(options.language)) {
+        var languages = new Translation();
+        options.language.push('en');
 
-      var languageNames = options.language;
+        var languageNames = options.language;
 
-      for (var l = 0; l < languageNames.length; l++) {
-        var name = languageNames[l];
-        var language = {};
+        for (var l = 0; l < languageNames.length; l++) {
+          var name = languageNames[l];
+          var language = {};
 
-        try {
-          // Try to load it with the original name
-          language = Translation.loadPath(name);
-        } catch (e) {
           try {
-            // If we couldn't load it, check if it wasn't the full path
-            name = this.defaults.amdLanguageBase + name;
+            // Try to load it with the original name
             language = Translation.loadPath(name);
-          } catch (ex) {
-            // The translation could not be loaded at all. Sometimes this is
-            // because of a configuration problem, other times this can be
-            // because of how Select2 helps load all possible translation files.
-            if (options.debug && window.console && console.warn) {
-              console.warn(
-                'Select2: The language file for "' + name + '" could not be ' +
-                'automatically loaded. A fallback will be used instead.'
-              );
+          } catch (e) {
+            try {
+              // If we couldn't load it, check if it wasn't the full path
+              name = this.defaults.amdLanguageBase + name;
+              language = Translation.loadPath(name);
+            } catch (ex) {
+              // The translation could not be loaded at all. Sometimes this is
+              // because of a configuration problem, other times this can be
+              // because of how Select2 helps load all possible translation files.
+              if (options.debug && window.console && console.warn) {
+                console.warn(
+                  'Select2: The language file for "' + name + '" could not be ' +
+                  'automatically loaded. A fallback will be used instead.'
+                );
+              }
+
+              continue;
             }
-
-            continue;
           }
+
+          languages.extend(language);
         }
 
-        languages.extend(language);
+        options.translations = languages;
+      } else {
+        var baseTranslation = Translation.loadPath(
+          this.defaults.amdLanguageBase + 'en'
+        );
+        var customTranslation = new Translation(options.language);
+
+        customTranslation.extend(baseTranslation);
+
+        options.translations = customTranslation;
       }
 
-      options.translations = languages;
-    } else {
-      var baseTranslation = Translation.loadPath(
-        this.defaults.amdLanguageBase + 'en'
-      );
-      var customTranslation = new Translation(options.language);
-
-      customTranslation.extend(baseTranslation);
-
-      options.translations = customTranslation;
-    }
-
-    return options;
-  };
-
-  Defaults.prototype.reset = function () {
-    function stripDiacritics (text) {
-      // Used 'uni range + named function' from http://jsperf.com/diacritics/18
-      function match(a) {
-        return DIACRITICS[a] || a;
-      }
-
-      return text.replace(/[^\u0000-\u007E]/g, match);
-    }
-
-    function matcher (params, data) {
-      // Always return the object if there is nothing to compare
-      if ($.trim(params.term) === '') {
-        return data;
-      }
-
-      // Do a recursive check for options with children
-      if (data.children && data.children.length > 0) {
-        // Clone the data object if there are children
-        // This is required as we modify the object to remove any non-matches
-        var match = $.extend(true, {}, data);
-
-        // Check each child of the option
-        for (var c = data.children.length - 1; c >= 0; c--) {
-          var child = data.children[c];
-
-          var matches = matcher(params, child);
-
-          // If there wasn't a match, remove the object in the array
-          if (matches == null) {
-            match.children.splice(c, 1);
-          }
-        }
-
-        // If any children matched, return the new object
-        if (match.children.length > 0) {
-          return match;
-        }
-
-        // If there were no matching children, check just the plain object
-        return matcher(params, match);
-      }
-
-      var original = stripDiacritics(data.text).toUpperCase();
-      var term = stripDiacritics(params.term).toUpperCase();
-
-      // Check if the text contains the term
-      if (original.indexOf(term) > -1) {
-        return data;
-      }
-
-      // If it doesn't contain the term, don't return anything
-      return null;
-    }
-
-    this.defaults = {
-      amdBase: './',
-      amdLanguageBase: './i18n/',
-      closeOnSelect: true,
-      debug: false,
-      dropdownAutoWidth: false,
-      escapeMarkup: Utils.escapeMarkup,
-      language: EnglishTranslation,
-      matcher: matcher,
-      minimumInputLength: 0,
-      maximumInputLength: 0,
-      maximumSelectionLength: 0,
-      minimumResultsForSearch: 0,
-      selectOnClose: false,
-      sorter: function (data) {
-        return data;
-      },
-      templateResult: function (result) {
-        return result.text;
-      },
-      templateSelection: function (selection) {
-        return selection.text;
-      },
-      theme: 'default',
-      width: 'resolve'
+      return options;
     };
-  };
 
-  Defaults.prototype.set = function (key, value) {
-    var camelKey = $.camelCase(key);
+    Defaults.prototype.reset = function () {
+      function stripDiacritics(text) {
+        // Used 'uni range + named function' from http://jsperf.com/diacritics/18
+        function match(a) {
+          return DIACRITICS[a] || a;
+        }
 
-    var data = {};
-    data[camelKey] = value;
+        return text.replace(/[^\u0000-\u007E]/g, match);
+      }
 
-    var convertedData = Utils._convertData(data);
+      function matcher(params, data) {
+        // Always return the object if there is nothing to compare
+        if ($.trim(params.term) === '') {
+          return data;
+        }
 
-    $.extend(this.defaults, convertedData);
-  };
+        // Do a recursive check for options with children
+        if (data.children && data.children.length > 0) {
+          // Clone the data object if there are children
+          // This is required as we modify the object to remove any non-matches
+          var match = $.extend(true, {}, data);
 
-  var defaults = new Defaults();
+          // Check each child of the option
+          for (var c = data.children.length - 1; c >= 0; c--) {
+            var child = data.children[c];
 
-  return defaults;
-});
+            var matches = matcher(params, child);
+
+            // If there wasn't a match, remove the object in the array
+            if (matches == null) {
+              match.children.splice(c, 1);
+            }
+          }
+
+          // If any children matched, return the new object
+          if (match.children.length > 0) {
+            return match;
+          }
+
+          // If there were no matching children, check just the plain object
+          return matcher(params, match);
+        }
+
+        var original = stripDiacritics(data.text).toUpperCase();
+        var term = stripDiacritics(params.term).toUpperCase();
+
+        // Check if the text contains the term
+        if (original.indexOf(term) > -1) {
+          return data;
+        }
+
+        // If it doesn't contain the term, don't return anything
+        return null;
+      }
+
+      this.defaults = {
+        amdBase: './',
+        amdLanguageBase: './i18n/',
+        closeOnSelect: true,
+        debug: false,
+        dropdownAutoWidth: false,
+        escapeMarkup: Utils.escapeMarkup,
+        language: EnglishTranslation,
+        matcher: matcher,
+        minimumInputLength: 0,
+        maximumInputLength: 0,
+        maximumSelectionLength: 0,
+        minimumResultsForSearch: 0,
+        selectOnClose: false,
+        sorter: function (data) {
+          return data;
+        },
+        templateResult: function (result) {
+          return result.text;
+        },
+        templateSelection: function (selection) {
+          return selection.text;
+        },
+        theme: 'default',
+        width: 'resolve'
+      };
+    };
+
+    Defaults.prototype.set = function (key, value) {
+      var camelKey = $.camelCase(key);
+
+      var data = {};
+      data[camelKey] = value;
+
+      var convertedData = Utils._convertData(data);
+
+      $.extend(this.defaults, convertedData);
+    };
+
+    var defaults = new Defaults();
+
+    return defaults;
+  });
 
 S2.define('select2/options',[
   'require',
@@ -5353,7 +5434,7 @@ S2.define('select2/core',[
           self.close();
 
           evt.preventDefault();
-        } else if (key === KEYS.ENTER) {
+        } else if (key === KEYS.ENTER || key === KEYS.TAB) {
           self.trigger('results:select', {});
 
           evt.preventDefault();

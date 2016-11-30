@@ -325,7 +325,7 @@ define([
           self.close();
 
           evt.preventDefault();
-        } else if (key === KEYS.ENTER) {
+        } else if (key === KEYS.ENTER || key === KEYS.TAB) {
           self.trigger('results:select', {});
 
           evt.preventDefault();

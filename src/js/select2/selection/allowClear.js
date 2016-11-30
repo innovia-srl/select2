@@ -85,7 +85,7 @@ define([
 
     var $remove = $(
       '<span class="select2-selection__clear">' +
-        '&times;' +
+        '&#x2716;' +
       '</span>'
     );
     $remove.data('data', data);
